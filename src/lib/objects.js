@@ -2,6 +2,9 @@ import * as THREE from 'three'
 import { TeapotGeometry } from 'three/examples/jsm/geometries/TeapotGeometry.js'
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js'
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js'
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json'
 
 let font = null
@@ -73,7 +76,68 @@ export function makeObject(id, opts = {}) {
   return mesh
 }
 
-export function disposeObject(mesh) {
-  if (!mesh) return
-  mesh.geometry?.dispose()
+export function disposeObject(obj) {
+  if (!obj) return
+  obj.traverse((o) => {
+    o.geometry?.dispose()
+    if (o.material && o.material !== previewMaterial) {
+      const mats = Array.isArray(o.material) ? o.material : [o.material]
+      for (const m of mats) {
+        for (const k of Object.keys(m)) if (m[k]?.isTexture) m[k].dispose()
+        m.dispose()
+      }
+    }
+  })
+}
+
+/** Wrap any Object3D so that it is centred at the origin and fits the unit sphere. */
+export function normalizeObject(obj) {
+  const box = new THREE.Box3().setFromObject(obj)
+  const sphere = new THREE.Sphere()
+  box.getBoundingSphere(sphere)
+  const wrapper = new THREE.Group()
+  wrapper.add(obj)
+  obj.position.sub(sphere.center)
+  const r = sphere.radius || 1
+  wrapper.scale.setScalar(1 / r)
+  wrapper.name = 'model'
+  return wrapper
+}
+
+/**
+ * Parse an uploaded STL / OBJ / GLB (or self-contained GLTF) file into an
+ * Object3D, normalised to the unit sphere.
+ * @param {File} file
+ * @returns {Promise<THREE.Object3D>}
+ */
+export async function loadModelFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase()
+  let obj
+  if (ext === 'stl') {
+    const geometry = new STLLoader().parse(await file.arrayBuffer())
+    geometry.computeVertexNormals()
+    // STL files are usually Z-up; stand them upright in three's Y-up world.
+    geometry.rotateX(-Math.PI / 2)
+    obj = new THREE.Mesh(geometry, previewMaterial)
+  } else if (ext === 'obj') {
+    obj = new OBJLoader().parse(await file.text())
+    obj.traverse((o) => {
+      if (o.isMesh) {
+        if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals()
+        o.material = previewMaterial
+      }
+    })
+  } else if (ext === 'glb' || ext === 'gltf') {
+    const buffer = await file.arrayBuffer()
+    const gltf = await new Promise((resolve, reject) => {
+      new GLTFLoader().parse(buffer, '', resolve, reject)
+    })
+    obj = gltf.scene
+    obj.traverse((o) => {
+      if (o.isMesh && !o.material) o.material = previewMaterial
+    })
+  } else {
+    throw new Error(`Unsupported model format: .${ext} (use .stl, .obj or .glb)`)
+  }
+  return normalizeObject(obj)
 }

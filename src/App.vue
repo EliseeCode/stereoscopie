@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, shallowRef, watch } from 'vue'
 import ThreeView from './components/ThreeView.vue'
 import StereogramView from './components/StereogramView.vue'
 import ControlPanel from './components/ControlPanel.vue'
 import { makePattern, imageToTile, loadImageFile } from './lib/patterns.js'
+import { loadModelFile, disposeObject } from './lib/objects.js'
 
 const RESOLUTIONS = {
   'Match display (sharp)': 'display',
@@ -45,6 +46,24 @@ onMounted(() => {
 })
 
 const uploadedImage = shallowRef(null)
+const uploadedModel = shallowRef(null)
+const modelError = ref('')
+
+async function onModelUpload(file) {
+  modelError.value = ''
+  try {
+    const model = await loadModelFile(file)
+    const previous = uploadedModel.value
+    uploadedModel.value = model
+    objectId.value = 'model'
+    // Let the scene swap meshes before releasing the old model's GPU resources.
+    await nextTick()
+    if (previous) disposeObject(previous)
+  } catch (e) {
+    console.warn('Could not load model', e)
+    modelError.value = e?.message || 'Could not load this model.'
+  }
+}
 const depthData = shallowRef(null)
 
 const displaySize = ref({ cssWidth: 640, dpr: 1 })
@@ -128,6 +147,9 @@ function onDepth(data) {
 }
 
 // If the user switches away from "upload" and back before uploading, fall back.
+watch(objectId, (id) => {
+  if (id === 'model' && !uploadedModel.value) objectId.value = 'box'
+})
 watch(patternId, (id) => {
   if (id === 'upload' && !uploadedImage.value) patternId.value = 'blobs'
 })
@@ -155,6 +177,7 @@ watch(patternId, (id) => {
           ref="threeView"
           :depth-view="depthView"
           :text="text"
+          :model="uploadedModel"
           :object-id="objectId"
           :auto-rotate="autoRotate"
           :resolution="resolution"
@@ -172,9 +195,12 @@ watch(patternId, (id) => {
         v-model:crossEyed="crossEyed"
         v-model:autoRotate="autoRotate"
         :has-upload="!!uploadedImage"
+        :has-model="!!uploadedModel"
+        :model-error="modelError"
         :tile-preview="tilePreview"
         @regenerate="regenerate"
         @upload="onUpload"
+        @upload-model="onModelUpload"
       />
     </aside>
 

@@ -16,9 +16,17 @@ const props = defineProps({
   hasUpload: { type: Boolean, default: false },
   tilePreview: { type: String, default: '' },
   tileMm: { type: Number, default: 0 },
+  hasModel: { type: Boolean, default: false },
+  modelError: { type: String, default: '' },
 })
 
-const emit = defineEmits(['regenerate', 'upload'])
+const emit = defineEmits(['regenerate', 'upload', 'upload-model'])
+
+function onModelFile(e) {
+  const file = e.target.files?.[0]
+  if (file) emit('upload-model', file)
+  e.target.value = ''
+}
 
 function onFile(e) {
   const file = e.target.files?.[0]
@@ -35,8 +43,14 @@ function onFile(e) {
         <span>Shape</span>
         <select v-model="objectId">
           <option v-for="o in OBJECTS" :key="o.id" :value="o.id">{{ o.label }}</option>
+          <option value="model" :disabled="!hasModel">Your model</option>
         </select>
       </label>
+      <label class="btn file">
+        Load model (.stl / .obj / .glb)
+        <input type="file" accept=".stl,.obj,.glb,.gltf" @change="onModelFile" />
+      </label>
+      <p v-if="modelError" class="help error">{{ modelError }}</p>
       <label v-if="objectId === 'text'" class="field">
         <span>Text</span>
         <input v-model="text" type="text" maxlength="40" placeholder="HELLO" spellcheck="false" />
@@ -143,6 +157,9 @@ h2 {
   margin: 0;
   font-size: 12px;
   color: var(--muted);
+}
+.help.error {
+  color: #ff8a80;
 }
 .tile-row {
   display: flex;

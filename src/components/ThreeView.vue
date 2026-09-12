@@ -11,6 +11,7 @@ const props = defineProps({
   resolution: { type: Object, required: true }, // { w, h }
   depthView: { type: Boolean, default: false },
   text: { type: String, default: 'HELLO' },
+  model: { type: Object, default: null }, // uploaded THREE.Object3D, already normalised
 })
 
 const emit = defineEmits(['depth'])
@@ -46,13 +47,22 @@ function applyResolution() {
   dirty = true
 }
 
+let ownsMesh = false
 function setObject(id) {
   if (mesh) {
     scene.remove(mesh)
-    disposeObject(mesh)
+    if (ownsMesh) disposeObject(mesh)
+    mesh = null
   }
-  mesh = makeObject(id, { text: props.text })
-  scene.add(mesh)
+  if (id === 'model') {
+    // The uploaded model is owned by the app, which disposes it when replaced.
+    mesh = props.model
+    ownsMesh = false
+  } else {
+    mesh = makeObject(id, { text: props.text })
+    ownsMesh = true
+  }
+  if (mesh) scene.add(mesh)
   dirty = true
 }
 
@@ -176,6 +186,7 @@ onBeforeUnmount(() => {
 })
 
 watch(() => props.objectId, (id) => setObject(id))
+watch(() => props.model, () => { if (props.objectId === 'model') setObject('model') })
 let textTimer = 0
 watch(() => props.text, () => {
   if (props.objectId !== 'text') return
